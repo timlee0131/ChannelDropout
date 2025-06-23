@@ -1,6 +1,7 @@
 import argparse
 import torch
 from experiments.exp_forecasting import Exp_Forecast
+from experiments.exp_imputation import Exp_Imputation
 import random
 import numpy as np
 import time
@@ -36,6 +37,10 @@ if __name__ == "__main__":
     parser.add_argument('--label_len', type=int, default=0, help='overlap length')
     parser.add_argument('--pred_len', type=int, default=96, help='prediction (horizon) length')
     
+    # imputation config
+    parser.add_argument('--missing_rate', type=float, default=0.2, help='missing rate')
+    parser.add_argument('--missing_pattern', type=str, default='random', help='missing pattern, options: [random, channel_block, temporal_block, sensor_failure, intermittent]')
+    
     # model config
     parser.add_argument('--d_input', type=int, default=1, help='input dimension')
     parser.add_argument('--d_model', type=int, default=128, help='model hidden dimension')
@@ -50,6 +55,9 @@ if __name__ == "__main__":
     parser.add_argument('--learning_rate', type=float, default=0.0001, help='optimizer learning rate')
     parser.add_argument('--lradj', type=str, default='type1', help='adjust learning rate')
     parser.add_argument('--weight_decay', type=float, default=1e-6, help='optimizer weight decay')
+    
+    # model task
+    parser.add_argument('--task', type=str, default='forecast', help='task name, options: [forecast, imputation]')
     
     # misc.
     parser.add_argument('--use_norm', type=int, default=True, help='use norm and denorm')
@@ -66,14 +74,44 @@ if __name__ == "__main__":
     print("Args in experiment:")
     print(args)
     
-    exp = Exp_Forecast(args)
+    if args.task == 'forecast':
+        exp = Exp_Forecast(args)
+        
+        if args.is_training:
+            model = exp.train()
+            test_loss_mse, test_loss_mae = exp.test()
+            print(f"\nTest Loss (MSE): {test_loss_mse}, Test Loss (MAE): {test_loss_mae}")
+        else:
+            test_loss_mse, test_loss_mae = exp.test()
+            print(f"Test Loss (MSE): {test_loss_mse}, Test Loss (MAE): {test_loss_mae}")
     
-    if args.is_training:
-        model = exp.train()
-        test_loss_mse, test_loss_mae = exp.test()
-        print(f"\nTest Loss (MSE): {test_loss_mse}, Test Loss (MAE): {test_loss_mae}")
+    elif args.task == 'imputation':
+        
+        if args.is_training:
+            print("\n>>> Train Control -> Test Control")
+            exp = Exp_Imputation(args)
+            model_control = exp.train(is_control=True)
+            control_loss_mse, control_loss_mae = exp.test(is_control=True)
+            print(f"\nControl Test Loss (MSE): {control_loss_mse}, Test Loss (MAE): {control_loss_mae}")
+            
+            print("\n>>> Train Control -> Test Missing")
+            exp = Exp_Imputation(args)
+            model_control = exp.train(is_control=True)
+            test_loss_mse, test_loss_mae = exp.test(is_control=False)
+            print(f"\n[Control -> Missing] Test Loss (MSE): {test_loss_mse}, Test Loss (MAE): {test_loss_mae}")
+            print(f"[Control -> Missing] MSE degradation at missing rate {args.missing_rate}: {((test_loss_mse - control_loss_mse) / control_loss_mse) * 100:.2f}%")
+            
+            print("\n>>> Train Missing -> Test Missing")
+            exp = Exp_Imputation(args)
+            model_missing = exp.train(is_control=False)
+            missing_loss_mse, missing_loss_mae = exp.test(is_control=False)
+            print(f"\n[Missing -> Missing] Test Loss (MSE): {missing_loss_mse}, Test Loss (MAE): {missing_loss_mae}")
+            print(f"[Missing -> Missing] MSE degradation at missing rate {args.missing_rate}: {((missing_loss_mse - control_loss_mse) / control_loss_mse) * 100:.2f}%")
+            
+        else:
+            exp = Exp_Imputation(args)
+            test_loss_mse, test_loss_mae = exp.test(is_control=True)
+            print(f"Test Loss (MSE): {test_loss_mse}, Test Loss (MAE): {test_loss_mae}")
+    
     else:
-        test_loss_mse, test_loss_mae = exp.test()
-        print(f"Test Loss (MSE): {test_loss_mse}, Test Loss (MAE): {test_loss_mae}")
-    
-    
+        raise ValueError(f"Invalid task: {args.task}, options: [forecast, imputation]")

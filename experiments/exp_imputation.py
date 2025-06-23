@@ -11,10 +11,11 @@ import numpy as np
 from models import PatchTransformer, InvertedTransformer, ACITransformer
 from utils.metrics import metric
 from utils.tools import EarlyStopping
+from utils.missing_data import MissingDataSimulator, MissingDataHandler
 
 warnings.filterwarnings('ignore')
 
-class Exp_Forecast():
+class Exp_Imputation():
     def __init__(self, args):
         self.args = args
         
@@ -24,6 +25,9 @@ class Exp_Forecast():
             'ACITransformer': ACITransformer,
         }
         self.model = self._build_model().to(args.device)
+        
+        self.missing_data_simulator = MissingDataSimulator(missing_rate=args.missing_rate, pattern=args.missing_pattern)
+        self.missing_data_handler = MissingDataHandler(strategy='mean_fill')
     
     def _build_model(self):
         model = self.model_dict[self.args.model](self.args)
@@ -46,7 +50,7 @@ class Exp_Forecast():
         eval_criterion = nn.L1Loss()
         return criterion, eval_criterion
     
-    def train(self):
+    def train(self, is_control=True):
         # data shape (B, L, N)
         train_data, train_loader = self._get_data('train')
         val_data, val_loader = self._get_data('val')
@@ -65,6 +69,10 @@ class Exp_Forecast():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
                 batch_x = batch_x.float().to(self.args.device)
                 batch_y = batch_y.float().to(self.args.device)
+                
+                if not is_control:
+                    batch_x, _ = self.missing_data_simulator(batch_x)
+                    batch_x, _ = self.missing_data_handler(batch_x)
                 
                 if 'PEMS' in self.args.data or 'Solar' in self.args.data:
                     batch_x_mark = None
@@ -114,7 +122,7 @@ class Exp_Forecast():
                 
         return total_loss / len(val_loader)
     
-    def test(self):
+    def test(self, is_control=True):
         test_data, test_loader = self._get_data(flag='test')
         
         criterion, eval_criterion = self._select_criterion()
@@ -127,6 +135,10 @@ class Exp_Forecast():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(test_loader):
                 batch_x = batch_x.float().to(self.args.device)
                 batch_y = batch_y.float().to(self.args.device)
+                
+                if not is_control:
+                    batch_x, _ = self.missing_data_simulator(batch_x)
+                    batch_x, _ = self.missing_data_handler(batch_x)
                 
                 if 'PEMS' in self.args.data or 'Solar' in self.args.data:
                     batch_x_mark = None

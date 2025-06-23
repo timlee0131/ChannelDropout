@@ -10,8 +10,8 @@ class ChannelDropout(nn.Module):
         deterministic (bool): If True, always drop the same channels
     
     Shape:
-        Input: (B, L, N) 
-        Output: (B, L, N) with floor(N * p) channels dropped
+        Input: (B, N, L) 
+        Output: (B, N, L) with floor(N * p) channels dropped
     """
     
     def __init__(self, p=0.1, shared_across_batch=False, deterministic=False):
@@ -31,21 +31,21 @@ class ChannelDropout(nn.Module):
     def forward(self, x):
         """
         Args:
-            x: Input tensor of shape (B, L, N)
+            x: Input tensor of shape (B, N, L)
         
         Returns:
             Output tensor with floor(N * p) channels dropped
         """
         if not self.training or self.p == 0:
-            return x
+            return x, None
         
-        B, L, N = x.shape
+        B, N, L = x.shape
         
         # Calculate exact number of channels to drop
         num_to_drop = int(N * self.p)
         
         if num_to_drop == 0:
-            return x  # No channels to drop
+            return x, None  # No channels to drop
         
         if num_to_drop >= N:
             raise ValueError(f"Cannot drop {num_to_drop} channels from {N} total channels")
@@ -60,14 +60,14 @@ class ChannelDropout(nn.Module):
             mask = self._create_fixed_mask(B, N, num_to_drop, x.device)
         
         # Reshape mask to broadcast across time dimension
-        mask = mask.unsqueeze(1)  # Shape: (B, 1, N)
+        mask = mask.unsqueeze(-1)  # Shape: (B, N, 1)
         
         # Apply dropout with exact scaling
         # Since we drop exactly num_to_drop channels, scaling is precise
         num_kept = N - num_to_drop
         scale_factor = N / num_kept  # Exact scaling factor
         
-        return x * mask.float() * scale_factor
+        return x * mask.float() * scale_factor, mask
     
     def _create_fixed_mask(self, batch_size, n_channels, num_to_drop, device):
         """Create mask that drops exactly num_to_drop channels"""

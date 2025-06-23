@@ -1,4 +1,4 @@
-model_name=PatchTransformer
+model_name=InvertedTransformer
 
 python run.py \
     --is_training 1 \
@@ -14,7 +14,7 @@ python run.py \
     --d_model 128 \
     --num_heads 8 \
     --dropout 0.1 \
-    --channel_dropout 0.1 \
+    --channel_dropout 0.2 \
     --num_layers 4 \
     --epochs 10 \
     --patience 5 \
